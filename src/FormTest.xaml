@@ -1,0 +1,91 @@
+﻿<Window x:Class="SpeechToTextAssistant.src.FormTest"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:SpeechToTextAssistant.src"
+        mc:Ignorable="d"
+        Title="FormTest" Height="450" Width="800">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" 
+            Text="Test Form - Different Input Types" 
+            FontSize="16" FontWeight="Bold" Margin="0,0,0,20"/>
+
+        <!-- Standard TextBox -->
+        <TextBlock Grid.Row="1" Grid.Column="0" Text="Standard TextBox:" 
+            VerticalAlignment="Center" Margin="0,0,10,10"/>
+        <TextBox Grid.Row="1" Grid.Column="1" Margin="0,0,0,10" 
+          Text="This is a standard TextBox"/>
+
+        <!-- Password Box -->
+        <TextBlock Grid.Row="2" Grid.Column="0" Text="Password Box:" 
+            VerticalAlignment="Center" Margin="0,0,10,10"/>
+        <PasswordBox Grid.Row="2" Grid.Column="1" Margin="0,0,0,10" 
+              Password="password123"/>
+
+        <!-- RichTextBox -->
+        <TextBlock Grid.Row="3" Grid.Column="0" Text="RichTextBox:" 
+            VerticalAlignment="Top" Margin="0,0,10,10"/>
+        <RichTextBox Grid.Row="3" Grid.Column="1" Height="60" Margin="0,0,0,10">
+            <FlowDocument>
+                <Paragraph>
+                    <Run Text="This is a rich text box with formatting capabilities."/>
+                </Paragraph>
+            </FlowDocument>
+        </RichTextBox>
+
+        <!-- ComboBox -->
+        <TextBlock Grid.Row="4" Grid.Column="0" Text="ComboBox:" 
+            VerticalAlignment="Center" Margin="0,0,10,10"/>
+        <ComboBox Grid.Row="4" Grid.Column="1" Margin="0,0,0,10" IsEditable="True">
+            <ComboBoxItem Content="Option 1"/>
+            <ComboBoxItem Content="Option 2"/>
+            <ComboBoxItem Content="Option 3"/>
+        </ComboBox>
+
+        <!-- TextBox with Watermark -->
+        <TextBlock Grid.Row="5" Grid.Column="0" Text="Search Box:" 
+            VerticalAlignment="Center" Margin="0,0,10,10"/>
+        <TextBox Grid.Row="5" Grid.Column="1" Margin="0,0,0,10">
+            <TextBox.Style>
+                <Style TargetType="TextBox">
+                    <Style.Triggers>
+                        <Trigger Property="Text" Value="">
+                            <Setter Property="Background">
+                                <Setter.Value>
+                                    <VisualBrush AlignmentX="Left" AlignmentY="Center" Stretch="None">
+                                        <VisualBrush.Visual>
+                                            <TextBlock Text="Search here..." Foreground="Gray"/>
+                                        </VisualBrush.Visual>
+                                    </VisualBrush>
+                                </Setter.Value>
+                            </Setter>
+                        </Trigger>
+                    </Style.Triggers>
+                </Style>
+            </TextBox.Style>
+        </TextBox>
+
+        <!-- MultiLine TextBox -->
+        <TextBlock Grid.Row="6" Grid.Column="0" Text="Multi-line:" 
+            VerticalAlignment="Top" Margin="0,10,10,0"/>
+        <TextBox Grid.Row="6" Grid.Column="1" TextWrapping="Wrap" AcceptsReturn="True" 
+          VerticalAlignment="Stretch" Margin="0,10,0,0"
+          Text="This is a multi-line&#x0a;text box&#x0a;with several lines&#x0a;of content."/>
+    </Grid>
+
+</Window>

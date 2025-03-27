@@ -100,6 +100,10 @@ namespace SpeechToTextAssistant.Helpers
             GetWindowText(handle, builder, builder.Capacity);
             return builder.ToString();
         }
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool IsWindow(IntPtr hWnd);
         #endregion
     }
 }

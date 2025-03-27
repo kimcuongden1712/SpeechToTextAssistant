@@ -18,6 +18,8 @@ namespace SpeechToTextAssistant.Services
 
         public bool IsRecognizing => _isRecognizing;
 
+        public Action<object, string> TextRecognized { get; set; }
+
         public SpeechRecognitionService()
         {
             InitializeSpeechRecognition();
@@ -31,7 +33,7 @@ namespace SpeechToTextAssistant.Services
             try
             {
                 _recognitionEngine = new SpeechRecognitionEngine(
-                    new System.Globalization.CultureInfo("en-US"));
+                    new System.Globalization.CultureInfo("vi-VN"));
 
                 // Load dictation grammar for free-text speech recognition
                 _recognitionEngine.LoadGrammar(new DictationGrammar());

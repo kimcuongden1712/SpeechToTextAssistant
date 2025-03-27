@@ -1,4 +1,4 @@
-using SpeechToTextAssistant.Models;
+﻿using SpeechToTextAssistant.Models;
 using SpeechToTextAssistant.Services;
 using SpeechToTextAssistant.src;
 using System;
@@ -10,24 +10,30 @@ namespace SpeechToTextAssistant
     public partial class MainWindow : Window
     {
         private InputDetectionService _inputDetectionService;
-        public ObservableCollection<string> DetectionLog { get; } = new ObservableCollection<string>();
-        // Update the MainWindow class to add OverlayService integration
 
         private OverlayService _overlayService;
+
+        private SpeechRecognitionService _speechRecognitionService;
+        public ObservableCollection<string> DetectionLog { get; } = new ObservableCollection<string>();
         public MainWindow()
         {
             InitializeComponent();
             LogListView.ItemsSource = DetectionLog;
 
-            // Initialize the detection service
             _inputDetectionService = new InputDetectionService();
             _inputDetectionService.InputFieldDetected += OnInputFieldDetected;
-            // Initialize the services
+
             _overlayService = new OverlayService();
             _overlayService.MicrophoneButtonClicked += OnMicrophoneButtonClicked;
             _overlayService.OptionsButtonClicked += OnOptionsButtonClicked;
             _overlayService.SpeechRecognized += OnSpeechRecognized;
             _overlayService.RecognitionError += OnRecognitionError;
+
+            _speechRecognitionService = new SpeechRecognitionService();
+            _speechRecognitionService.RecognitionStarted += OnRecognitionStarted;
+            _speechRecognitionService.RecognitionStopped += OnRecognitionStopped;
+            _speechRecognitionService.TextRecognized += OnTextRecognized;
+            _speechRecognitionService.RecognitionError += OnSpeechRecognitionError;
         }
 
         private void OnInputFieldDetected(object sender, InputFieldDetectedEventArgs e)
@@ -102,10 +108,24 @@ namespace SpeechToTextAssistant
                 }
             }
         }
+        /// <summary>
+        /// This would eventually connect to SpeechRecognitionService
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void OnMicrophoneButtonClicked(object sender, EventArgs e)
         {
-            // This would eventually connect to SpeechRecognitionService
-            LogEvent("Microphone button clicked");
+            LogEvent("Microphone button clicked - Starting speech recognition");
+            if (_speechRecognitionService.IsRecognizing)
+            {
+                _speechRecognitionService.StopRecognition();
+                LogEvent("Stopping active recognition session");
+            }
+            else
+            {
+                _overlayService.ShowRecordingInProgress();
+                _speechRecognitionService.StartRecognition();
+            }
         }
 
         private void OnOptionsButtonClicked(object sender, EventArgs e)
@@ -150,6 +170,40 @@ namespace SpeechToTextAssistant
         private void OnRecognitionError(object sender, string e)
         {
             LogEvent($"Recognition error: {e}");
+        }
+
+        private void OnRecognitionStarted(object sender, EventArgs e)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                LogEvent("Speech recognition started");
+            });
+        }
+
+        private void OnRecognitionStopped(object sender, EventArgs e)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                LogEvent("Speech recognition stopped");
+                _overlayService.ShowRecordingStopped();
+            });
+        }
+
+        private void OnTextRecognized(object sender, string recognizedText)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                LogEvent($"Text recognized: \"{recognizedText}\"");
+                // Có thể bạn sẽ muốn xử lý văn bản ở đây hoặc chuyển tiếp nó
+            });
+        }
+
+        private void OnSpeechRecognitionError(object sender, string errorMessage)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                LogEvent($"Recognition service error: {errorMessage}");
+            });
         }
     }
 }

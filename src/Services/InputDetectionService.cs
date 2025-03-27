@@ -24,9 +24,11 @@ namespace SpeechToTextAssistant.Services
         private HwndSource _hwndSource;
         #endregion
 
+        /// <summary>
+        /// Initialize the input detection
+        /// </summary>
         public InputDetectionService()
         {
-            // Initialize the input detection
             Start();
         }
 
@@ -77,6 +79,10 @@ namespace SpeechToTextAssistant.Services
         {
             // Ignore non-client objects (we only want edit controls)
             if (idObject != Win32Interop.OBJID_CLIENT && idObject != 0)
+                return;
+
+            // Verify if the window handle is valid
+            if (!Win32Interop.IsWindow(hwnd))
                 return;
 
             // Try to determine if this is a text input control

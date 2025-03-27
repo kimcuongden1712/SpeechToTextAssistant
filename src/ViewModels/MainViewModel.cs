@@ -3,12 +3,15 @@
 // - Kết nối các services
 // - Cung cấp commands cho giao diện người dùng
 using SpeechToTextAssistant.Infrastructures;
+using SpeechToTextAssistant.Services;
 using System.Windows.Input;
 
 namespace SpeechToTextAssistant.ViewModels
 {
     public class MainViewModel : ViewModelBase
     {
+        private InputDetectionService _inputDetectionService;
+        private OverlayService _overlayService;
         private string _recognizedText;
         private bool _isListening;
 
@@ -38,6 +41,8 @@ namespace SpeechToTextAssistant.ViewModels
         public MainViewModel()
         {
             ListenCommand = new RelayCommand(OnListen);
+            _inputDetectionService = new InputDetectionService();
+            _overlayService = new OverlayService();
         }
 
         private void OnListen()

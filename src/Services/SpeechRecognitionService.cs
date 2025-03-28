@@ -1,4 +1,5 @@
-﻿using SpeechToTextAssistant.Models;
+﻿using SpeechToTextAssistant.Helpers;
+using SpeechToTextAssistant.Models;
 using System;
 using System.Speech.Recognition;
 using System.Windows.Automation;
@@ -38,9 +39,10 @@ namespace SpeechToTextAssistant.Services
                 // Load dictation grammar for free-text speech recognition
                 _recognitionEngine.LoadGrammar(new DictationGrammar());
 
-                // Set up event handlers
-                _recognitionEngine.SpeechRecognized += OnSpeechRecognized;
-                _recognitionEngine.SpeechRecognitionRejected += OnSpeechRecognitionRejected;
+                // Đăng ký các sự kiện nhận dạng
+                _recognitionEngine.SpeechRecognized += Recognizer_SpeechRecognized;
+                _recognitionEngine.RecognizeCompleted += Recognizer_RecognizeCompleted;
+                _recognitionEngine.SpeechRecognitionRejected += Recognizer_SpeechRecognitionRejected;
 
                 // Set input to default audio device
                 _recognitionEngine.SetInputToDefaultAudioDevice();
@@ -53,7 +55,7 @@ namespace SpeechToTextAssistant.Services
 
         public bool StartRecognition()
         {
-            if (_isRecognizing) return false;
+            if ((_recognitionEngine is null) || _isRecognizing) return false;
 
             try
             {
@@ -71,7 +73,7 @@ namespace SpeechToTextAssistant.Services
 
         public bool StopRecognition()
         {
-            if (!_isRecognizing) return false;
+            if ((_recognitionEngine is null) || !_isRecognizing) return false;
 
             try
             {
@@ -109,12 +111,13 @@ namespace SpeechToTextAssistant.Services
                     // For TextPattern, we need more complex handling
                     // This is simplified - real implementation may need to handle selection, etc.
                     // For now, just simulate keyboard input
-                    SimulateTextInput(element, text);
+                    SendTextViaKeyboard(element, text);
                     return;
                 }
 
-                // Fall back to simulating keyboard input
-                SimulateTextInput(element, text);
+                // Dùng mô phỏng phím tắt để paste text
+                System.Windows.Clipboard.SetText(text);
+                InputSimulatorHelper.PasteFromClipboard();// Ctrl+V
             }
             catch (Exception ex)
             {
@@ -139,7 +142,7 @@ namespace SpeechToTextAssistant.Services
                 }
 
                 // Fall back to simulating keyboard input to append
-                SimulateTextInput(element, text);
+                SendTextViaKeyboard(element, text);
             }
             catch (Exception ex)
             {
@@ -147,29 +150,62 @@ namespace SpeechToTextAssistant.Services
             }
         }
 
-        private void SimulateTextInput(AutomationElement element, string text)
+        private void SendTextViaKeyboard(AutomationElement element, string text)
         {
             // Focus the element first
             element.SetFocus();
 
-            // Use SendKeys to input text (requires System.Windows.Forms reference)
-            //System.Windows.Forms.SendKeys.SendWait(text);
-        }
-
-        private void OnSpeechRecognized(object sender, SpeechRecognizedEventArgs e)
-        {
-            if (e.Result.Confidence > 0.3) // Minimum confidence threshold
+            // Lưu clipboard hiện tại
+            string currentClipboard = null;
+            if (System.Windows.Clipboard.ContainsText())
             {
-                var result = new SpeechRecognitionResult(e.Result.Text, e.Result.Confidence);
-                SpeechRecognized?.Invoke(this, result);
+                currentClipboard = System.Windows.Clipboard.GetText();
+            }
+
+            // Đặt văn bản nhận dạng vào clipboard
+            System.Windows.Clipboard.SetText(text);
+
+            // Sử dụng UI Automation để thực hiện thao tác paste
+            try
+            {
+                // Sử dụng UI Automation để gửi Ctrl+V
+                InputSimulatorHelper.PasteFromClipboard();
+            }
+            catch (Exception ex)
+            {
+                RecognitionError?.Invoke(this, $"Failed to simulate keyboard input: {ex.Message}");
+            }
+
+            // Khôi phục clipboard
+            if (!string.IsNullOrEmpty(currentClipboard))
+            {
+                System.Windows.Clipboard.SetText(currentClipboard);
             }
         }
 
-        private void OnSpeechRecognitionRejected(object sender, SpeechRecognitionRejectedEventArgs e)
+        private void Recognizer_SpeechRecognized(object sender, SpeechRecognizedEventArgs e)
+        {
+            if (e.Result != null && e.Result.Text.Length > 0 && e.Result.Confidence > 0.5)
+            {
+                TextRecognized?.Invoke(this, e.Result.Text);
+            }
+        }
+
+        private void Recognizer_SpeechRecognitionRejected(object sender, SpeechRecognitionRejectedEventArgs e)
         {
             RecognitionError?.Invoke(this, "Speech recognition rejected or not understood");
         }
 
+        private void Recognizer_RecognizeCompleted(object sender, RecognizeCompletedEventArgs e)
+        {
+            if (e.Error != null)
+            {
+                RecognitionError?.Invoke(this, $"Lỗi nhận dạng: {e.Error.Message}");
+            }
+
+            _isRecognizing = false;
+            RecognitionStopped?.Invoke(this, EventArgs.Empty);
+        }
         public void Dispose()
         {
             if (_recognitionEngine != null)

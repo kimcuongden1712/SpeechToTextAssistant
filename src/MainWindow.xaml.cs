@@ -1,9 +1,12 @@
-﻿using SpeechToTextAssistant.Models;
+﻿using Hardcodet.Wpf.TaskbarNotification;
+using SpeechToTextAssistant.Infrastructures;
+using SpeechToTextAssistant.Models;
 using SpeechToTextAssistant.Services;
 using SpeechToTextAssistant.src;
 using System;
 using System.Collections.ObjectModel;
 using System.Windows;
+using System.Windows.Controls;
 
 namespace SpeechToTextAssistant
 {
@@ -15,6 +18,7 @@ namespace SpeechToTextAssistant
 
         private SpeechRecognitionService _speechRecognitionService;
         public ObservableCollection<string> DetectionLog { get; } = new ObservableCollection<string>();
+        private TaskbarIcon _taskbarIcon;
         public MainWindow()
         {
             InitializeComponent();
@@ -144,6 +148,7 @@ namespace SpeechToTextAssistant
             _inputDetectionService.Start();
             StatusText.Text = "Monitoring for input fields...";
             LogEvent("Detection service started");
+            InitializeSystemTray();
         }
 
         private void Exit(object sender, RoutedEventArgs e)
@@ -151,6 +156,10 @@ namespace SpeechToTextAssistant
             _inputDetectionService.Dispose();
             _overlayService.HideOverlay();
             _overlayService.Cleanup();
+            if (_taskbarIcon != null)
+            {
+                _taskbarIcon.Dispose();
+            }
         }
 
         private void TestFieldButton_Click(object sender, RoutedEventArgs e)
@@ -204,6 +213,82 @@ namespace SpeechToTextAssistant
             {
                 LogEvent($"Recognition service error: {errorMessage}");
             });
+        }
+
+        private void InitializeSystemTray()
+        {
+            _taskbarIcon = new TaskbarIcon
+            {
+                //IconSource = new BitmapImage(new Uri("pack://application:,,,/Resources/Icons/microphone.png")), TODO: Add icon
+                ToolTipText = "Speech To Text Assistant"
+            };
+
+            // Tạo context menu kiểu WPF
+            var contextMenu = new ContextMenu();
+
+            // Tạo menu item "Bật/Tắt"
+            var enableItem = new MenuItem { Header = "Bật/Tắt" };
+            enableItem.Click += (s, e) =>
+            {
+                if (_inputDetectionService != null)
+                {
+                    if (PauseResumeButton.Content.ToString() == "Pause")
+                    {
+                        _inputDetectionService.Stop();
+                        PauseResumeButton.Content = "Resume";
+                        enableItem.Header = "Bật";
+                    }
+                    else
+                    {
+                        _inputDetectionService.Start();
+                        PauseResumeButton.Content = "Pause";
+                        enableItem.Header = "Tắt";
+                    }
+                }
+            };
+
+            // Tạo menu item "Cài đặt"
+            var settingsItem = new MenuItem { Header = "Cài đặt" };
+            settingsItem.Click += (s, e) =>
+            {
+                this.Show();
+                this.WindowState = WindowState.Normal;
+                this.Activate();
+            };
+
+            // Tạo menu item "Thoát"
+            var exitItem = new MenuItem { Header = "Thoát" };
+            exitItem.Click += (s, e) =>
+            {
+                Application.Current.Shutdown();
+            };
+
+            // Thêm các item vào context menu
+            contextMenu.Items.Add(enableItem);
+            contextMenu.Items.Add(settingsItem);
+            contextMenu.Items.Add(new Separator());
+            contextMenu.Items.Add(exitItem);
+
+            // Gán context menu cho taskbar icon
+            _taskbarIcon.ContextMenu = contextMenu;
+
+            // Xử lý sự kiện double-click
+            _taskbarIcon.DoubleClickCommand = new RelayCommand(() =>
+            {
+                this.Show();
+                this.WindowState = WindowState.Normal;
+                this.Activate();
+            });
+        }
+
+        protected override void OnStateChanged(EventArgs e)
+        {
+            if (WindowState == WindowState.Minimized)
+            {
+                this.Hide();
+            }
+
+            base.OnStateChanged(e);
         }
     }
 }

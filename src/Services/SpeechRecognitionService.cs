@@ -319,21 +319,22 @@ namespace SpeechToTextAssistant.Services
 
                 // Xử lý dữ liệu đã thu âm
                 byte[] audioData = _audioStream.ToArray();
+                //DEBUG sound
                 // Lưu thành WAV file để debug
-                string waveFilePath = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
-                    $"speech_recording_{DateTime.Now:yyyyMMdd_HHmmss}.wav");
+                //string waveFilePath = Path.Combine(
+                //    Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
+                //    $"speech_recording_{DateTime.Now:yyyyMMdd_HHmmss}.wav");
 
-                using (var writer = new WaveFileWriter(waveFilePath, new WaveFormat(16000, 1)))
-                {
-                    writer.Write(audioData, 0, audioData.Length);
-                }
-                if (audioData.Length == 0)
-                {
-                    RecognitionError?.Invoke(this, "Không có dữ liệu âm thanh nào được thu thập");
-                    return false;
-                }
-
+                //using (var writer = new WaveFileWriter(waveFilePath, new WaveFormat(16000, 1)))
+                //{
+                //    writer.Write(audioData, 0, audioData.Length);
+                //}
+                //if (audioData.Length == 0)
+                //{
+                //    RecognitionError?.Invoke(this, "Không có dữ liệu âm thanh nào được thu thập");
+                //    return false;
+                //}
+                //END DEBUG sound
                 // Reset recognizer để xử lý toàn bộ đoạn âm thanh thu được
                 _recognizer.Reset();
 

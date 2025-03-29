@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+﻿<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -10,13 +10,20 @@
 
   <ItemGroup>
     <Page Remove="Resources\Icons.xaml" />
+    <Page Remove="src\App.xaml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ApplicationDefinition Include="src\App.xaml" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Hardcodet.NotifyIcon.Wpf" Version="2.0.1" />
     <PackageReference Include="LivetCask" Version="4.0.2" />
     <PackageReference Include="Microsoft.Windows.Compatibility" Version="9.0.3" />
+    <PackageReference Include="NAudio" Version="2.2.1" />
     <PackageReference Include="System.Speech" Version="9.0.3" />
+    <PackageReference Include="Vosk" Version="0.3.38" />
   </ItemGroup>
 
   <ItemGroup>
@@ -25,5 +32,13 @@
       <Generator>MSBuild:Compile</Generator>
     </Resource>
   </ItemGroup>
-
+    <ItemGroup>
+        <VoskModelFiles Include="src\Models\vosk-model-vn\**\*.*" />
+    </ItemGroup>
+    <ItemGroup>
+      <Folder Include="src\Models\vosk-model-vn\" />
+    </ItemGroup>
+    <Target Name="CopyVoskModel" AfterTargets="Build">
+        <Copy SourceFiles="@(VoskModelFiles)" DestinationFiles="$(OutputPath)Models\vosk-model-vn\%(RecursiveDir)%(Filename)%(Extension)" SkipUnchangedFiles="true" />
+    </Target>
 </Project>

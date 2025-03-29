@@ -1,93 +1,213 @@
-﻿using SpeechToTextAssistant.Helpers;
+﻿using NAudio.Wave;
+using SpeechToTextAssistant.Helpers;
 using SpeechToTextAssistant.Models;
 using System;
-using System.Speech.Recognition;
+using System.Collections.Generic;
+using System.IO;
+using System.Text.Json;
+using System.Windows;
 using System.Windows.Automation;
+using Vosk;
 
 namespace SpeechToTextAssistant.Services
 {
     public class SpeechRecognitionService : IDisposable
     {
-        private SpeechRecognitionEngine _recognitionEngine;
+        private Model _model;
+        private VoskRecognizer _recognizer;
+        private WaveInEvent _waveIn;
         private bool _isRecognizing = false;
+        private bool _isInitialized = false;
 
         // Events
         public event EventHandler<SpeechRecognitionResult> SpeechRecognized;
         public event EventHandler RecognitionStarted;
         public event EventHandler RecognitionStopped;
         public event EventHandler<string> RecognitionError;
+        public event EventHandler<float> AudioLevelChanged;
 
         public bool IsRecognizing => _isRecognizing;
+        public bool IsInitialized => _isInitialized;
 
-        public Action<object, string> TextRecognized { get; set; }
+        // Thêm các biến để lưu trữ âm thanh đã thu
+        private List<byte[]> _recordedAudioBuffers = new List<byte[]>();
+        private MemoryStream _audioStream;
+        private bool _isCollectingAudio = false;
+
+        // Thêm sự kiện thông báo trạng thái thu âm
+        public event EventHandler<bool> RecordingStateChanged;
+
+        // Thuộc tính để kiểm tra trạng thái
+        public bool IsCollectingAudio => _isCollectingAudio;
 
         public SpeechRecognitionService()
         {
-            InitializeSpeechRecognition();
+            // Khởi tạo sẽ được thực hiện bất đồng bộ thông qua Initialize()
+            Initialize();
         }
 
         /// <summary>
-        /// Initialize the speech recognition engine
+        /// Khởi tạo Vosk Speech Recognition model
         /// </summary>
-        private void InitializeSpeechRecognition()
+        public void Initialize()
         {
+            if (_isInitialized) return;
+
             try
             {
-                _recognitionEngine = new SpeechRecognitionEngine(
-                    new System.Globalization.CultureInfo("vi-VN"));
+                string modelPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Models", "vosk-model-vn");
 
-                // Load dictation grammar for free-text speech recognition
-                _recognitionEngine.LoadGrammar(new DictationGrammar());
+                if (!Directory.Exists(modelPath))
+                {
+                    throw new DirectoryNotFoundException($"Không tìm thấy mô hình Vosk tại {modelPath}");
+                }
 
-                // Đăng ký các sự kiện nhận dạng
-                _recognitionEngine.SpeechRecognized += Recognizer_SpeechRecognized;
-                _recognitionEngine.RecognizeCompleted += Recognizer_RecognizeCompleted;
-                _recognitionEngine.SpeechRecognitionRejected += Recognizer_SpeechRecognitionRejected;
+                _model = new Model(modelPath);
+                _recognizer = new VoskRecognizer(_model, 16000.0f);
+                _recognizer.SetMaxAlternatives(0);
+                _recognizer.SetWords(true);
+                _recognizer.SetPartialWords(true);
 
-                // Set input to default audio device
-                _recognitionEngine.SetInputToDefaultAudioDevice();
+                _isInitialized = true;
             }
             catch (Exception ex)
             {
-                RecognitionError?.Invoke(this, $"Failed to initialize speech recognition: {ex.Message}");
+                RecognitionError?.Invoke(this, $"Không thể khởi tạo nhận dạng giọng nói: {ex.Message}");
             }
         }
 
         public bool StartRecognition()
         {
-            if ((_recognitionEngine is null) || _isRecognizing) return false;
+            if (!_isInitialized || _isRecognizing) return false;
+            // Nếu đang thu âm thì dừng lại và xử lý
 
+            if (_isRecognizing && _isCollectingAudio)
+            {
+                return ProcessRecordedAudio();
+            }
             try
             {
-                _recognitionEngine.RecognizeAsync(RecognizeMode.Multiple);
+                if (_waveIn != null)
+                {
+                    _waveIn.Dispose();
+                }
+
+                _waveIn = new WaveInEvent
+                {
+                    DeviceNumber = 0, // Microphone mặc định
+                    WaveFormat = new WaveFormat(16000, 1), // 16kHz mono - định dạng Vosk yêu cầu
+                    BufferMilliseconds = 50
+                };
+
+                _recognizer.Reset();
+                _recordedAudioBuffers.Clear();
+                _audioStream = new MemoryStream();
+                _waveIn.DataAvailable += WaveIn_DataAvailableForRecording;
+                _waveIn.RecordingStopped += WaveIn_RecordingStopped;
+
+                _waveIn.StartRecording();
                 _isRecognizing = true;
+                _isCollectingAudio = true;
+                RecordingStateChanged?.Invoke(this, true);
                 RecognitionStarted?.Invoke(this, EventArgs.Empty);
+
                 return true;
             }
             catch (Exception ex)
             {
-                RecognitionError?.Invoke(this, $"Failed to start speech recognition: {ex.Message}");
+                RecognitionError?.Invoke(this, $"Không thể bắt đầu nhận dạng giọng nói: {ex.Message}");
                 return false;
             }
         }
 
         public bool StopRecognition()
         {
-            if ((_recognitionEngine is null) || !_isRecognizing) return false;
+            if (!_isRecognizing) return false;
 
             try
             {
-                _recognitionEngine.RecognizeAsyncStop();
-                _isRecognizing = false;
-                RecognitionStopped?.Invoke(this, EventArgs.Empty);
-                return true;
+                if (_isCollectingAudio)
+                {
+                    return ProcessRecordedAudio();
+                }
+                else
+                {
+                    _waveIn?.StopRecording();
+                    _isRecognizing = false;
+                    RecognitionStopped?.Invoke(this, EventArgs.Empty);
+                    return true;
+                }
             }
             catch (Exception ex)
             {
-                RecognitionError?.Invoke(this, $"Failed to stop speech recognition: {ex.Message}");
+                RecognitionError?.Invoke(this, $"Không thể dừng nhận dạng giọng nói: {ex.Message}");
                 return false;
             }
         }
+
+        private void WaveIn_DataAvailableForRecording(object sender, WaveInEventArgs e)
+        {
+            try
+            {
+                // Tính toán mức âm lượng để hiển thị trực quan
+                CalculateAudioLevel(e.Buffer, e.BytesRecorded);
+
+                // Lưu dữ liệu âm thanh vào bộ nhớ đệm
+                byte[] buffer = new byte[e.BytesRecorded];
+                Buffer.BlockCopy(e.Buffer, 0, buffer, 0, e.BytesRecorded);
+                _recordedAudioBuffers.Add(buffer);
+                _audioStream.Write(e.Buffer, 0, e.BytesRecorded);
+            }
+            catch (Exception ex)
+            {
+                Application.Current.Dispatcher.Invoke(() =>
+                    RecognitionError?.Invoke(this, $"Lỗi xử lý âm thanh: {ex.Message}"));
+            }
+        }
+
+        private void WaveIn_RecordingStopped(object sender, StoppedEventArgs e)
+        {
+            _isRecognizing = false;
+
+            if (e.Exception != null)
+            {
+                Application.Current.Dispatcher.Invoke(() =>
+                    RecognitionError?.Invoke(this, $"Ghi âm bị dừng do lỗi: {e.Exception.Message}"));
+            }
+
+            // Thông báo rằng nhận dạng đã dừng
+            Application.Current.Dispatcher.Invoke(() =>
+                RecognitionStopped?.Invoke(this, EventArgs.Empty));
+
+            _waveIn?.Dispose();
+            _waveIn = null;
+        }
+
+        private void CalculateAudioLevel(byte[] buffer, int bytesRecorded)
+        {
+            // Chuyển đổi byte[] thành short[] (mẫu 16-bit)
+            int shortSampleCount = bytesRecorded / 2;
+            short[] shortBuffer = new short[shortSampleCount];
+            Buffer.BlockCopy(buffer, 0, shortBuffer, 0, bytesRecorded);
+
+            // Tính RMS (root mean square)
+            double sum = 0;
+            for (int i = 0; i < shortSampleCount; i++)
+            {
+                sum += Math.Pow(shortBuffer[i], 2);
+            }
+
+            double rms = Math.Sqrt(sum / shortSampleCount);
+
+            // Chuyển đổi sang thang 0-1
+            float audioLevel = (float)Math.Min(1.0, rms / 32768.0);
+
+            // Thông báo mức âm lượng
+            Application.Current.Dispatcher.Invoke(() =>
+                AudioLevelChanged?.Invoke(this, audioLevel));
+        }
+
+        #region Text Insertion Methods - Unchanged
 
         public void InsertTextIntoFocusedElement(AutomationElement element, string text)
         {
@@ -121,7 +241,7 @@ namespace SpeechToTextAssistant.Services
             }
             catch (Exception ex)
             {
-                RecognitionError?.Invoke(this, $"Failed to insert text: {ex.Message}");
+                RecognitionError?.Invoke(this, $"Lỗi chèn văn bản: {ex.Message}");
             }
         }
 
@@ -146,7 +266,7 @@ namespace SpeechToTextAssistant.Services
             }
             catch (Exception ex)
             {
-                RecognitionError?.Invoke(this, $"Failed to append text: {ex.Message}");
+                RecognitionError?.Invoke(this, $"Lỗi thêm văn bản: {ex.Message}");
             }
         }
 
@@ -173,7 +293,7 @@ namespace SpeechToTextAssistant.Services
             }
             catch (Exception ex)
             {
-                RecognitionError?.Invoke(this, $"Failed to simulate keyboard input: {ex.Message}");
+                RecognitionError?.Invoke(this, $"Lỗi mô phỏng bàn phím: {ex.Message}");
             }
 
             // Khôi phục clipboard
@@ -183,37 +303,189 @@ namespace SpeechToTextAssistant.Services
             }
         }
 
-        private void Recognizer_SpeechRecognized(object sender, SpeechRecognizedEventArgs e)
+        #endregion
+        private bool ProcessRecordedAudio()
         {
-            if (e.Result != null && e.Result.Text.Length > 0 && e.Result.Confidence > 0.5)
+            try
             {
-                TextRecognized?.Invoke(this, e.Result.Text);
+                // Dừng thu âm
+                _waveIn?.StopRecording();
+                _isCollectingAudio = false;
+                RecordingStateChanged?.Invoke(this, false);
+
+                // Thông báo đang xử lý
+                Application.Current.Dispatcher.Invoke(() =>
+                    RecognitionStarted?.Invoke(this, EventArgs.Empty));
+
+                // Xử lý dữ liệu đã thu âm
+                byte[] audioData = _audioStream.ToArray();
+                // Lưu thành WAV file để debug
+                string waveFilePath = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
+                    $"speech_recording_{DateTime.Now:yyyyMMdd_HHmmss}.wav");
+
+                using (var writer = new WaveFileWriter(waveFilePath, new WaveFormat(16000, 1)))
+                {
+                    writer.Write(audioData, 0, audioData.Length);
+                }
+                if (audioData.Length == 0)
+                {
+                    RecognitionError?.Invoke(this, "Không có dữ liệu âm thanh nào được thu thập");
+                    return false;
+                }
+
+                // Reset recognizer để xử lý toàn bộ đoạn âm thanh thu được
+                _recognizer.Reset();
+
+                //var a = RecognizeWavFile(waveFilePath); Debug for dev
+                // Xử lý theo từng chunk
+                int bufferSize = 4000;
+                int offset = 0;
+                string intermediateText = null;
+                while (offset < audioData.Length)
+                {
+                    int bytesToProcess = Math.Min(bufferSize, audioData.Length - offset);
+                    byte[] chunkBuffer = new byte[bytesToProcess];
+                    Buffer.BlockCopy(audioData, offset, chunkBuffer, 0, bytesToProcess);
+
+                    bool accepted = _recognizer.AcceptWaveform(chunkBuffer, bytesToProcess);
+
+                    if (accepted)
+                    {
+                        var chunkResult = JsonSerializer.Deserialize<VoskResult>(_recognizer.Result());
+                        if (!string.IsNullOrEmpty(chunkResult?.Text))
+                        {
+                            // Lưu lại kết quả trung gian
+                            intermediateText = chunkResult.Text;
+                            Console.WriteLine($"Intermediate result: {intermediateText}");
+                        }
+                    }
+
+                    offset += bytesToProcess;
+                }
+
+                // Lấy kết quả cuối
+                var result = JsonSerializer.Deserialize<VoskResult>(_recognizer.FinalResult());
+
+                // QUAN TRỌNG: Nếu kết quả cuối trống, sử dụng kết quả trung gian
+                if (string.IsNullOrEmpty(result?.Text) && !string.IsNullOrEmpty(intermediateText))
+                {
+                    result = new VoskResult { Text = intermediateText };
+                    Console.WriteLine($"Using intermediate result: {result.Text}");
+                }
+
+                if (!string.IsNullOrEmpty(result?.Text))
+                {
+                    Console.WriteLine($"Recognized text: {result.Text}");
+                    var recognitionResult = new SpeechRecognitionResult(result.Text);
+                    Application.Current.Dispatcher.Invoke(() =>
+                        SpeechRecognized?.Invoke(this, recognitionResult));
+                }
+                else
+                {
+                    RecognitionError?.Invoke(this, "Không nhận dạng được giọng nói");
+                }
+
+                // Dọn dẹp
+                _audioStream.Dispose();
+                _audioStream = new MemoryStream();
+                _recordedAudioBuffers.Clear();
+                _isRecognizing = false;
+
+                // Thông báo đã hoàn thành
+                RecognitionStopped?.Invoke(this, EventArgs.Empty);
+                return true;
             }
-        }
-
-        private void Recognizer_SpeechRecognitionRejected(object sender, SpeechRecognitionRejectedEventArgs e)
-        {
-            RecognitionError?.Invoke(this, "Speech recognition rejected or not understood");
-        }
-
-        private void Recognizer_RecognizeCompleted(object sender, RecognizeCompletedEventArgs e)
-        {
-            if (e.Error != null)
+            catch (Exception ex)
             {
-                RecognitionError?.Invoke(this, $"Lỗi nhận dạng: {e.Error.Message}");
+                RecognitionError?.Invoke(this, $"Lỗi khi xử lý âm thanh: {ex.Message}");
+                _isRecognizing = false;
+                RecognitionStopped?.Invoke(this, EventArgs.Empty);
+                return false;
             }
-
-            _isRecognizing = false;
-            RecognitionStopped?.Invoke(this, EventArgs.Empty);
         }
         public void Dispose()
         {
-            if (_recognitionEngine != null)
+            StopRecognition();
+            _waveIn?.Dispose();
+            _model?.Dispose();
+            _recognizer?.Dispose();
+            _audioStream?.Dispose();
+        }
+        public string RecognizeWavFile(string filePath)
+        {
+            if (!_isInitialized)
+                throw new InvalidOperationException("Vosk không được khởi tạo");
+
+            Console.WriteLine($"Processing WAV file: {filePath}");
+
+            // Store the best intermediate result
+            string bestIntermediateResult = null;
+
+            using (var waveFile = new AudioFileReader(filePath))
             {
-                StopRecognition();
-                _recognitionEngine.Dispose();
-                _recognitionEngine = null;
+                // Create a new recognizer specifically for this file
+                var rec = new VoskRecognizer(_model, 16000.0f);
+                rec.SetMaxAlternatives(0);
+                rec.SetWords(true);
+                rec.SetPartialWords(true); // Add this line
+
+                // Already in right format (assuming file is 16kHz mono)
+                byte[] buffer = new byte[4096];
+                int bytesRead;
+                string lastPartial = null;
+
+                while ((bytesRead = waveFile.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    if (rec.AcceptWaveform(buffer, bytesRead))
+                    {
+                        string resultJson = rec.Result();
+                        Console.WriteLine($"Intermediate result: {resultJson}");
+
+                        // Save intermediate results
+                        var intermediateResult = JsonSerializer.Deserialize<VoskResult>(resultJson);
+                        if (!string.IsNullOrEmpty(intermediateResult?.Text))
+                        {
+                            bestIntermediateResult = intermediateResult.Text;
+                        }
+                    }
+                    else
+                    {
+                        string partialJson = rec.PartialResult();
+                        Console.WriteLine($"Partial: {partialJson}");
+
+                        // Track partial results too
+                        var partial = JsonSerializer.Deserialize<VoskPartialResult>(partialJson);
+                        if (!string.IsNullOrEmpty(partial?.Partial))
+                        {
+                            lastPartial = partial.Partial;
+                        }
+                    }
+                }
+
+                // Get final result
+                var finalResult = rec.FinalResult();
+                Console.WriteLine($"Final result: {finalResult}");
+
+                // If final result is empty but we have intermediate results, use those
+                var finalObj = JsonSerializer.Deserialize<VoskResult>(finalResult);
+                if (string.IsNullOrEmpty(finalObj?.Text))
+                {
+                    if (!string.IsNullOrEmpty(bestIntermediateResult))
+                    {
+                        Console.WriteLine($"Using best intermediate result: {bestIntermediateResult}");
+                        return JsonSerializer.Serialize(new VoskResult { Text = bestIntermediateResult });
+                    }
+                    else if (!string.IsNullOrEmpty(lastPartial))
+                    {
+                        Console.WriteLine($"Using last partial result: {lastPartial}");
+                        return JsonSerializer.Serialize(new VoskResult { Text = lastPartial });
+                    }
+                }
+
+                return finalResult;
             }
         }
+
     }
 }

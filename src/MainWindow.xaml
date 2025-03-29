@@ -3,10 +3,12 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Speech To Text Assistant - Detector Test" Height="500" Width="600" Loaded="Window_Loaded">
     <Grid Margin="10">
+
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         
@@ -43,5 +45,17 @@
             <Button Content="Test Field" Width="80" Height="25" Margin="0,0,10,0"/>
             <Button Content="Exit" Width="80" Height="25" Click="Exit"/>
         </StackPanel>
+        <Border BorderBrush="Gray" BorderThickness="1" Height="20" Margin="5" Grid.Row="4">
+            <Grid>
+                <Rectangle x:Name="audioLevelIndicator" 
+          HorizontalAlignment="Left" 
+          Fill="Green" 
+          Width="0"/>
+                <TextBlock x:Name="audioLevelText" 
+          HorizontalAlignment="Center" 
+          VerticalAlignment="Center"
+          Text="0%" />
+            </Grid>
+        </Border>
     </Grid>
 </Window>

@@ -7,6 +7,7 @@ using System;
 using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 
 namespace SpeechToTextAssistant
 {
@@ -33,13 +34,78 @@ namespace SpeechToTextAssistant
             _overlayService.SpeechRecognized += OnSpeechRecognized;
             _overlayService.RecognitionError += OnRecognitionError;
 
-            _speechRecognitionService = new SpeechRecognitionService();
-            _speechRecognitionService.RecognitionStarted += OnRecognitionStarted;
-            _speechRecognitionService.RecognitionStopped += OnRecognitionStopped;
-            _speechRecognitionService.TextRecognized += OnTextRecognized;
-            _speechRecognitionService.RecognitionError += OnSpeechRecognitionError;
-        }
+            try
+            {
+                _speechRecognitionService = new SpeechRecognitionService();
+                _speechRecognitionService.Initialize();
 
+                // Đăng ký sự kiện
+                _speechRecognitionService.SpeechRecognized += (s, result) =>
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        // Xử lý text được nhận dạng TODO
+                        //recognizedTextBlock.Text = text;
+
+                        //// Chèn text vào ứng dụng đang focus
+                        //var focusedElement = _inputDetectionService.
+                        //if (focusedElement != null)
+                        //{
+                        //    _speechRecognitionService.InsertTextIntoFocusedElement(focusedElement, text);
+                        //}
+                        MessageBox.Show(result.RecognizedText);
+                    });
+                };
+
+                // Hiển thị mức âm thanh nếu cần
+                _speechRecognitionService.AudioLevelChanged += (sender, level) =>
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        audioLevelIndicator.Width = level * 200; // Giả sử có control hiển thị mức âm
+                    });
+                };
+
+                // Xử lý lỗi
+                _speechRecognitionService.RecognitionError += (sender, errorMessage) =>
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        // Hiển thị thông báo lỗi
+                        LogEvent($"Lỗi: {errorMessage}");
+                    });
+                };
+                _speechRecognitionService.AudioLevelChanged += (sender, level) =>
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        audioLevelIndicator.Width = level * 200; // 200 là chiều rộng tối đa
+                        audioLevelText.Text = $"{(int)(level * 100)}%";
+
+                        // Đổi màu dựa trên mức độ
+                        if (level > 0.7)
+                            audioLevelIndicator.Fill = new SolidColorBrush(Colors.Red);
+                        else if (level > 0.4)
+                            audioLevelIndicator.Fill = new SolidColorBrush(Colors.Yellow);
+                        else
+                            audioLevelIndicator.Fill = new SolidColorBrush(Colors.Green);
+                    });
+                };
+
+                _speechRecognitionService.RecognitionStarted += (sender, e) =>
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        LogEvent("Bắt đầu nhận dạng giọng nói");
+                    });
+                };
+            }
+            catch (Exception ex)
+            {
+                LogEvent($"Error initializing speech recognition: {ex.Message}");
+            }
+
+        }
         private void OnInputFieldDetected(object sender, InputFieldDetectedEventArgs e)
         {
             // Update the UI on the UI thread
@@ -148,7 +214,7 @@ namespace SpeechToTextAssistant
             _inputDetectionService.Start();
             StatusText.Text = "Monitoring for input fields...";
             LogEvent("Detection service started");
-            InitializeSystemTray();
+            //InitializeSystemTray();
         }
 
         private void Exit(object sender, RoutedEventArgs e)
@@ -173,7 +239,7 @@ namespace SpeechToTextAssistant
 
         private void OnSpeechRecognized(object sender, SpeechRecognitionResult e)
         {
-            LogEvent($"Speech recognized: \"{e.RecognizedText}\" (Confidence: {e.Confidence:P})");
+            LogEvent($"Speech recognized: \"{e.RecognizedText}\" ");
         }
 
         private void OnRecognitionError(object sender, string e)
@@ -195,23 +261,6 @@ namespace SpeechToTextAssistant
             {
                 LogEvent("Speech recognition stopped");
                 _overlayService.ShowRecordingStopped();
-            });
-        }
-
-        private void OnTextRecognized(object sender, string recognizedText)
-        {
-            Dispatcher.Invoke(() =>
-            {
-                LogEvent($"Text recognized: \"{recognizedText}\"");
-                // Có thể bạn sẽ muốn xử lý văn bản ở đây hoặc chuyển tiếp nó
-            });
-        }
-
-        private void OnSpeechRecognitionError(object sender, string errorMessage)
-        {
-            Dispatcher.Invoke(() =>
-            {
-                LogEvent($"Recognition service error: {errorMessage}");
             });
         }
 
